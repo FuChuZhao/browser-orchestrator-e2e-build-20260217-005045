@@ -94,7 +94,8 @@ jobs:
             echo "Chrome or chromedriver binary not found" >&2
             exit 1
           fi
-          chmod +x "$CHROME_BIN" "$CHROMEDRIVER_BIN"
+          find "$CFT_ROOT" -type f -path '*/chrome-linux64/*' -exec chmod +x {} +
+          find "$CFT_ROOT" -type f -path '*/chromedriver-linux64/*' -exec chmod +x {} +
           echo "OKRET_CHROME_BIN=$CHROME_BIN" >> "$GITHUB_ENV"
           echo "OKRET_CHROMEDRIVER_BIN=$CHROMEDRIVER_BIN" >> "$GITHUB_ENV"
           "$CHROME_BIN" --version

@@ -43,6 +43,22 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Setup Chrome for Testing
+        run: |
+          CFT_ROOT="$RUNNER_TEMP/chrome-for-testing"
+          mkdir -p "$CFT_ROOT"
+          npx --yes @puppeteer/browsers install chrome@stable --path "$CFT_ROOT"
+          CHROME_BIN="$(find "$CFT_ROOT" -type f -path '*/chrome-linux64/chrome' | head -n 1)"
+          if [ -z "$CHROME_BIN" ]; then
+            CHROME_BIN="$(find "$CFT_ROOT" -type f -name chrome | head -n 1)"
+          fi
+          if [ -z "$CHROME_BIN" ]; then
+            echo "Chrome for Testing binary not found" >&2
+            exit 1
+          fi
+          echo "OKRET_CHROME_BIN=$CHROME_BIN" >> "$GITHUB_ENV"
+          "$CHROME_BIN" --version
+
       - name: Install dependencies
         run: python -m pip install --upgrade pip pyyaml selenium
 

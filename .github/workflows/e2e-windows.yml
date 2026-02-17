@@ -44,64 +44,38 @@ jobs:
           node-version: "20"
 
       - name: Setup Chrome for Testing
+        shell: pwsh
         run: |
-          CFT_ROOT="$RUNNER_TEMP/chrome-for-testing"
-          mkdir -p "$CFT_ROOT"
-          readarray -t CFT_URLS < <(python - <<'PY'
-          import json
-          import urllib.request
+          $cftRoot = Join-Path $env:RUNNER_TEMP "chrome-for-testing"
+          New-Item -ItemType Directory -Path $cftRoot -Force | Out-Null
 
-          meta_url = "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json"
-          with urllib.request.urlopen(meta_url, timeout=30) as response:
-              metadata = json.load(response)
+          $metaUrl = "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json"
+          $meta = Invoke-RestMethod -Uri $metaUrl
+          $chromeUrl = ($meta.channels.Stable.downloads.chrome | Where-Object { $_.platform -eq "win64" } | Select-Object -First 1).url
+          $driverUrl = ($meta.channels.Stable.downloads.chromedriver | Where-Object { $_.platform -eq "win64" } | Select-Object -First 1).url
 
-          downloads = metadata["channels"]["Stable"]["downloads"]
+          if ([string]::IsNullOrWhiteSpace($chromeUrl) -or [string]::IsNullOrWhiteSpace($driverUrl)) {
+            throw "Chrome or chromedriver download URL not found"
+          }
 
-          def pick(kind: str, platform: str) -> str:
-              for item in downloads.get(kind, []):
-                  if item.get("platform") == platform:
-                      return str(item.get("url", ""))
-              return ""
+          $chromeZip = Join-Path $cftRoot "chrome-for-testing.zip"
+          $driverZip = Join-Path $cftRoot "chromedriver-for-testing.zip"
+          Invoke-WebRequest -Uri $chromeUrl -OutFile $chromeZip
+          Invoke-WebRequest -Uri $driverUrl -OutFile $driverZip
 
-          print(pick("chrome", "win64"))
-          print(pick("chromedriver", "win64"))
-          PY
-          )
-          CHROME_URL="${CFT_URLS[0]:-}"
-          CHROMEDRIVER_URL="${CFT_URLS[1]:-}"
-          CHROME_URL="${CHROME_URL//$'\r'/}"
-          CHROMEDRIVER_URL="${CHROMEDRIVER_URL//$'\r'/}"
-          if [ -z "$CHROME_URL" ] || [ -z "$CHROMEDRIVER_URL" ]; then
-            echo "Chrome or chromedriver download URL not found" >&2
-            exit 1
-          fi
-          curl -L --fail --retry 3 --retry-delay 5 --retry-all-errors --max-time 900 \
-            -o "$CFT_ROOT/chrome-for-testing.zip" "$CHROME_URL"
-          curl -L --fail --retry 3 --retry-delay 5 --retry-all-errors --max-time 900 \
-            -o "$CFT_ROOT/chromedriver-for-testing.zip" "$CHROMEDRIVER_URL"
-          CFT_ROOT="$CFT_ROOT" python - <<'PY'
-          import os
-          import pathlib
-          import zipfile
+          Expand-Archive -LiteralPath $chromeZip -DestinationPath $cftRoot -Force
+          Expand-Archive -LiteralPath $driverZip -DestinationPath $cftRoot -Force
 
-          root = pathlib.Path(os.environ["CFT_ROOT"])
-          for name in ("chrome-for-testing.zip", "chromedriver-for-testing.zip"):
-              archive_path = root / name
-              with zipfile.ZipFile(archive_path, "r") as archive:
-                  archive.extractall(root)
-          PY
-          CHROME_BIN_UNIX="$(find "$CFT_ROOT" -type f -name chrome.exe | head -n 1)"
-          CHROMEDRIVER_BIN_UNIX="$(find "$CFT_ROOT" -type f -name chromedriver.exe | head -n 1)"
-          if [ -z "$CHROME_BIN_UNIX" ] || [ -z "$CHROMEDRIVER_BIN_UNIX" ]; then
-            echo "Chrome or chromedriver binary not found" >&2
-            exit 1
-          fi
-          CHROME_BIN_WIN="$(cygpath -w "$CHROME_BIN_UNIX")"
-          CHROMEDRIVER_BIN_WIN="$(cygpath -w "$CHROMEDRIVER_BIN_UNIX")"
-          echo "OKRET_CHROME_BIN=$CHROME_BIN_WIN" >> "$GITHUB_ENV"
-          echo "OKRET_CHROMEDRIVER_BIN=$CHROMEDRIVER_BIN_WIN" >> "$GITHUB_ENV"
-          "$CHROME_BIN_UNIX" --version
-          "$CHROMEDRIVER_BIN_UNIX" --version
+          $chromeBin = Get-ChildItem -Path $cftRoot -Recurse -Filter chrome.exe | Select-Object -First 1
+          $driverBin = Get-ChildItem -Path $cftRoot -Recurse -Filter chromedriver.exe | Select-Object -First 1
+          if ($null -eq $chromeBin -or $null -eq $driverBin) {
+            throw "Chrome or chromedriver binary not found"
+          }
+
+          "OKRET_CHROME_BIN=$($chromeBin.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "OKRET_CHROMEDRIVER_BIN=$($driverBin.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          & $chromeBin.FullName --version
+          & $driverBin.FullName --version
 
       - name: Install dependencies
         run: python -m pip install --upgrade pip pyyaml selenium

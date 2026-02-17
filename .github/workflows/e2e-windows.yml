@@ -69,6 +69,8 @@ jobs:
           )
           CHROME_URL="${CFT_URLS[0]:-}"
           CHROMEDRIVER_URL="${CFT_URLS[1]:-}"
+          CHROME_URL="${CHROME_URL//$'\r'/}"
+          CHROMEDRIVER_URL="${CHROMEDRIVER_URL//$'\r'/}"
           if [ -z "$CHROME_URL" ] || [ -z "$CHROMEDRIVER_URL" ]; then
             echo "Chrome or chromedriver download URL not found" >&2
             exit 1

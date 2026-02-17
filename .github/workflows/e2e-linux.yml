@@ -101,8 +101,13 @@ jobs:
           "$CHROME_BIN" --version
           "$CHROMEDRIVER_BIN" --version
 
+      - name: Ensure Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
       - name: Install dependencies
-        run: python -m pip install --upgrade pip pyyaml selenium
+        run: python -m pip install --upgrade pip pyyaml selenium mss
 
       - name: Setup SSH for private source
         env:

@@ -87,6 +87,7 @@ jobs:
             echo "Chrome for Testing binary not found" >&2
             exit 1
           fi
+          chmod +x "$CHROME_BIN"
           echo "OKRET_CHROME_BIN=$CHROME_BIN" >> "$GITHUB_ENV"
           "$CHROME_BIN" --version
 

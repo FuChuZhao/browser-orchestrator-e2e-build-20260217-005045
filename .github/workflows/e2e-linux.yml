@@ -1,0 +1,128 @@
+name: e2e-linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: Source repository (owner/name)
+        required: true
+        default: FuChuZhao/browser-orchestrator-e2e-source-20260217-005045
+      source_ref:
+        description: Source ref to checkout
+        required: true
+        default: main
+      artifact_name:
+        description: Artifact name prefix
+        required: true
+        default: e2e-linux
+      run_id:
+        description: Optional run id
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  linux-e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout build repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip pyyaml selenium
+
+      - name: Setup SSH for private source
+        env:
+          SOURCE_REPO_SSH_KEY: ${{ secrets.SOURCE_REPO_SSH_KEY }}
+        run: |
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$SOURCE_REPO_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          ssh-keyscan github.com >> "$HOME/.ssh/known_hosts"
+
+      - name: Clone private source
+        run: |
+          git clone --depth 1 --branch "${{ inputs.source_ref }}" "git@github.com:${{ inputs.source_repo }}.git" source
+
+      - name: Ensure executable scripts
+        run: |
+          chmod +x source/tool/ci/cloud-build-cycle.sh
+          chmod +x source/tool/ci/dispatch-dual-e2e.sh
+          chmod +x source/scripts/test/run-functional-tests.sh
+          chmod +x source/scripts/test/run-browser-e2e.sh
+          chmod +x source/scripts/narrative/run-product-narrative.sh
+
+      - name: Resolve run id
+        id: runid
+        run: |
+          if [ -n "${{ inputs.run_id }}" ]; then
+            value="${{ inputs.run_id }}"
+          else
+            value="linux-${{ github.run_id }}-${{ github.run_attempt }}"
+          fi
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+          echo "RUN_ID=$value" >> "$GITHUB_ENV"
+
+      - name: Run functional script
+        id: functional
+        continue-on-error: true
+        run: |
+          (cd source && scripts/test/run-functional-tests.sh \
+            --run-id "${{ steps.runid.outputs.value }}" \
+            --out-dir artifacts/test)
+
+      - name: Run narrative screenshot script
+        id: narrative
+        continue-on-error: true
+        run: |
+          (cd source && scripts/narrative/run-product-narrative.sh \
+            --run-id "${{ steps.runid.outputs.value }}" \
+            --out-dir artifacts/narrative)
+
+      - name: Upload functional artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}-functional-${{ steps.runid.outputs.value }}
+          path: source/artifacts/test/${{ steps.runid.outputs.value }}
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload narrative artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}-narrative-${{ steps.runid.outputs.value }}
+          path: source/artifacts/narrative/${{ steps.runid.outputs.value }}
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Enforce dual-script success
+        if: always()
+        run: |
+          echo "functional=${{ steps.functional.outcome }}"
+          echo "narrative=${{ steps.narrative.outcome }}"
+          if [ "${{ steps.functional.outcome }}" != "success" ]; then
+            echo "Functional script failed" >&2
+            exit 1
+          fi
+          if [ "${{ steps.narrative.outcome }}" != "success" ]; then
+            echo "Narrative script failed" >&2
+            exit 1
+          fi

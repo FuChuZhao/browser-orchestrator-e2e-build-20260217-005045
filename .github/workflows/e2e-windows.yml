@@ -47,7 +47,7 @@ jobs:
         run: |
           CFT_ROOT="$RUNNER_TEMP/chrome-for-testing"
           mkdir -p "$CFT_ROOT"
-          CFT_URL="$(python - <<'PY'
+          readarray -t CFT_URLS < <(python - <<'PY'
           import json
           import urllib.request
 
@@ -55,37 +55,51 @@ jobs:
           with urllib.request.urlopen(meta_url, timeout=30) as response:
               metadata = json.load(response)
 
-          downloads = metadata["channels"]["Stable"]["downloads"]["chrome"]
-          for item in downloads:
-              if item.get("platform") == "win64":
-                  print(str(item.get("url", "")))
-                  break
+          downloads = metadata["channels"]["Stable"]["downloads"]
+
+          def pick(kind: str, platform: str) -> str:
+              for item in downloads.get(kind, []):
+                  if item.get("platform") == platform:
+                      return str(item.get("url", ""))
+              return ""
+
+          print(pick("chrome", "win64"))
+          print(pick("chromedriver", "win64"))
           PY
-          )"
-          if [ -z "$CFT_URL" ]; then
-            echo "Chrome for Testing download URL not found" >&2
+          )
+          CHROME_URL="${CFT_URLS[0]:-}"
+          CHROMEDRIVER_URL="${CFT_URLS[1]:-}"
+          if [ -z "$CHROME_URL" ] || [ -z "$CHROMEDRIVER_URL" ]; then
+            echo "Chrome or chromedriver download URL not found" >&2
             exit 1
           fi
           curl -L --fail --retry 3 --retry-delay 5 --retry-all-errors --max-time 900 \
-            -o "$CFT_ROOT/chrome-for-testing.zip" "$CFT_URL"
+            -o "$CFT_ROOT/chrome-for-testing.zip" "$CHROME_URL"
+          curl -L --fail --retry 3 --retry-delay 5 --retry-all-errors --max-time 900 \
+            -o "$CFT_ROOT/chromedriver-for-testing.zip" "$CHROMEDRIVER_URL"
           CFT_ROOT="$CFT_ROOT" python - <<'PY'
           import os
           import pathlib
           import zipfile
 
           root = pathlib.Path(os.environ["CFT_ROOT"])
-          archive_path = root / "chrome-for-testing.zip"
-          with zipfile.ZipFile(archive_path, "r") as archive:
-              archive.extractall(root)
+          for name in ("chrome-for-testing.zip", "chromedriver-for-testing.zip"):
+              archive_path = root / name
+              with zipfile.ZipFile(archive_path, "r") as archive:
+                  archive.extractall(root)
           PY
           CHROME_BIN_UNIX="$(find "$CFT_ROOT" -type f -name chrome.exe | head -n 1)"
-          if [ -z "$CHROME_BIN_UNIX" ]; then
-            echo "Chrome for Testing binary not found" >&2
+          CHROMEDRIVER_BIN_UNIX="$(find "$CFT_ROOT" -type f -name chromedriver.exe | head -n 1)"
+          if [ -z "$CHROME_BIN_UNIX" ] || [ -z "$CHROMEDRIVER_BIN_UNIX" ]; then
+            echo "Chrome or chromedriver binary not found" >&2
             exit 1
           fi
           CHROME_BIN_WIN="$(cygpath -w "$CHROME_BIN_UNIX")"
+          CHROMEDRIVER_BIN_WIN="$(cygpath -w "$CHROMEDRIVER_BIN_UNIX")"
           echo "OKRET_CHROME_BIN=$CHROME_BIN_WIN" >> "$GITHUB_ENV"
+          echo "OKRET_CHROMEDRIVER_BIN=$CHROMEDRIVER_BIN_WIN" >> "$GITHUB_ENV"
           "$CHROME_BIN_UNIX" --version
+          "$CHROMEDRIVER_BIN_UNIX" --version
 
       - name: Install dependencies
         run: python -m pip install --upgrade pip pyyaml selenium

@@ -47,8 +47,42 @@ jobs:
         run: |
           CFT_ROOT="$RUNNER_TEMP/chrome-for-testing"
           mkdir -p "$CFT_ROOT"
-          npx --yes @puppeteer/browsers install chrome@stable --path "$CFT_ROOT"
-          CHROME_BIN_UNIX="$(find "$CFT_ROOT" -type f -name chrome.exe | head -n 1)"
+          CHROME_BIN_UNIX="$(CFT_ROOT="$CFT_ROOT" CFT_PLATFORM="win64" python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import shutil
+          import urllib.request
+          import zipfile
+
+          root = pathlib.Path(os.environ["CFT_ROOT"])
+          platform = os.environ["CFT_PLATFORM"]
+          meta_url = "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json"
+          with urllib.request.urlopen(meta_url, timeout=30) as response:
+              metadata = json.load(response)
+
+          downloads = metadata["channels"]["Stable"]["downloads"]["chrome"]
+          target_url = ""
+          for item in downloads:
+              if item.get("platform") == platform:
+                  target_url = str(item.get("url", ""))
+                  break
+          if not target_url:
+              raise SystemExit(f"download url not found for platform={platform}")
+
+          archive_path = root / "chrome-for-testing.zip"
+          with urllib.request.urlopen(target_url, timeout=300) as response, archive_path.open("wb") as output:
+              shutil.copyfileobj(response, output)
+
+          with zipfile.ZipFile(archive_path, "r") as archive:
+              archive.extractall(root)
+
+          candidates = sorted(root.rglob("chrome.exe"))
+          if not candidates:
+              raise SystemExit("chrome.exe not found after extract")
+          print(str(candidates[0]))
+          PY
+          )"
           if [ -z "$CHROME_BIN_UNIX" ]; then
             echo "Chrome for Testing binary not found" >&2
             exit 1

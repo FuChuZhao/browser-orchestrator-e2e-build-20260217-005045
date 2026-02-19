@@ -79,15 +79,28 @@ jobs:
           $qt6Dir = $qtConfig.Directory.FullName
           $qtPrefix = Split-Path (Split-Path (Split-Path $qt6Dir -Parent) -Parent) -Parent
           $qtBin = Join-Path $qtPrefix "bin"
+          $mergedPath = "$qtBin;$env:Path"
 
           "Qt6_DIR=$qt6Dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CMAKE_PREFIX_PATH=$qtPrefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "PATH=$qtBin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "OKRET_QT_CMAKE_GENERATOR=Visual Studio 17 2022" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "OKRET_QT_CMAKE_GENERATOR_PLATFORM=x64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PATH=$mergedPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "Path=$mergedPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "OKRET_QT_CMAKE_GENERATOR=Ninja" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "OKRET_QT_CMAKE_C_COMPILER=cl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "OKRET_QT_CMAKE_CXX_COMPILER=cl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           Write-Host "Qt6_DIR=$qt6Dir"
           Write-Host "CMAKE_PREFIX_PATH=$qtPrefix"
+
+      - name: Verify toolchain visibility
+        run: |
+          set -euo pipefail
+          echo "PATH(head)=$(echo "$PATH" | cut -d';' -f1-4)"
+          command -v cmake
+          command -v ninja
+          command -v cl.exe || command -v cl
+          cmake --version
+          ninja --version
 
       - name: Setup Chrome for Testing
         shell: pwsh

@@ -43,6 +43,52 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Setup MSVC dev environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Qt6 for Windows
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.6.3"
+          host: "windows"
+          target: "desktop"
+          arch: "win64_msvc2022_64"
+          cache: true
+
+      - name: Export Qt and CMake environment
+        shell: pwsh
+        run: |
+          $searchRoots = @($env:RUNNER_WORKSPACE, $env:RUNNER_TEMP, $env:GITHUB_WORKSPACE)
+          $qtConfig = $null
+          foreach ($root in $searchRoots) {
+            if ([string]::IsNullOrWhiteSpace($root) -or -not (Test-Path $root)) {
+              continue
+            }
+            $candidate = Get-ChildItem -Path $root -Recurse -Filter Qt6Config.cmake -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($null -ne $candidate) {
+              $qtConfig = $candidate
+              break
+            }
+          }
+          if ($null -eq $qtConfig) {
+            throw "Qt6Config.cmake not found after install-qt-action"
+          }
+
+          $qt6Dir = $qtConfig.Directory.FullName
+          $qtPrefix = Split-Path (Split-Path (Split-Path $qt6Dir -Parent) -Parent) -Parent
+          $qtBin = Join-Path $qtPrefix "bin"
+
+          "Qt6_DIR=$qt6Dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CMAKE_PREFIX_PATH=$qtPrefix" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PATH=$qtBin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "OKRET_QT_CMAKE_GENERATOR=Visual Studio 17 2022" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "OKRET_QT_CMAKE_GENERATOR_PLATFORM=x64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          Write-Host "Qt6_DIR=$qt6Dir"
+          Write-Host "CMAKE_PREFIX_PATH=$qtPrefix"
+
       - name: Setup Chrome for Testing
         shell: pwsh
         run: |

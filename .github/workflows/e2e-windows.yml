@@ -139,6 +139,49 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --upgrade pip pyyaml selenium mss
 
+      - name: Install Chinese font (Noto Sans CJK SC)
+        shell: pwsh
+        run: |
+          $fontUrl = "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf"
+          $downloadPath = Join-Path $env:RUNNER_TEMP "NotoSansCJKsc-Regular.otf"
+          Invoke-WebRequest -Uri $fontUrl -OutFile $downloadPath
+
+          $installed = $false
+          try {
+            $systemFontsDir = Join-Path $env:WINDIR "Fonts"
+            $systemFontPath = Join-Path $systemFontsDir "NotoSansCJKsc-Regular.otf"
+            Copy-Item $downloadPath $systemFontPath -Force
+            New-ItemProperty `
+              -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts" `
+              -Name "Noto Sans CJK SC Regular (OpenType)" `
+              -PropertyType String `
+              -Value "NotoSansCJKsc-Regular.otf" `
+              -Force | Out-Null
+            $installed = $true
+            Write-Host "Installed font to system fonts: $systemFontPath"
+          } catch {
+            Write-Host "System font install failed, fallback to current user fonts. Error: $($_.Exception.Message)"
+          }
+
+          if (-not $installed) {
+            $userFontsDir = Join-Path $env:LOCALAPPDATA "Microsoft\Windows\Fonts"
+            New-Item -ItemType Directory -Path $userFontsDir -Force | Out-Null
+            $userFontPath = Join-Path $userFontsDir "NotoSansCJKsc-Regular.otf"
+            Copy-Item $downloadPath $userFontPath -Force
+            New-ItemProperty `
+              -Path "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts" `
+              -Name "Noto Sans CJK SC Regular (OpenType)" `
+              -PropertyType String `
+              -Value $userFontPath `
+              -Force | Out-Null
+            $installed = $true
+            Write-Host "Installed font to user fonts: $userFontPath"
+          }
+
+          if (-not $installed) {
+            throw "Failed to install Chinese font."
+          }
+
       - name: Setup SSH for private source
         env:
           SOURCE_REPO_SSH_KEY: ${{ secrets.SOURCE_REPO_SSH_KEY }}
